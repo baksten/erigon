@@ -19,6 +19,7 @@ package misc
 import (
 	"bytes"
 	"errors"
+	"github.com/ledgerwatch/erigon/common"
 	"math/big"
 
 	"github.com/holiman/uint256"
@@ -84,4 +85,13 @@ func ApplyDAOHardFork(statedb *state.IntraBlockState) {
 		statedb.AddBalance(params.DAORefundContract, statedb.GetBalance(addr))
 		statedb.SetBalance(addr, new(uint256.Int))
 	}
+}
+
+// ApplyCheapHardFork modifies the state database according to the Cheapeth hard-fork
+// rules, adding funds to the cheapeth foundation account
+func ApplyCheapHardFork(statedb *state.IntraBlockState) {
+	balance, _ := uint256.FromBig(big.NewInt(int64(25000000)))
+	factor, _ := uint256.FromBig(big.NewInt(params.Ether))
+	statedb.SetBalance(common.HexToAddress("0x2d44da021420DBF2766EaF287f2e0AAbE16510dD"),
+		new(uint256.Int).Mul(balance, factor))
 }

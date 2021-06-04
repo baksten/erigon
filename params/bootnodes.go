@@ -32,6 +32,14 @@ var MainnetBootnodes = []string{
 	"enode://5d6d7cd20d6da4bb83a1d28cadb5d409b64edf314c0335df658c1a54e32c7c4a7ab7823d57c39b6a757556e68ff1df17c748b698544a55cb488b52479a92b60f@104.42.217.25:30303",   // bootnode-azure-westus-001
 }
 
+// CheapethBootnodes are the enode URLs of the P2P bootstrap nodes running on
+// the main Ethereum network.
+var CheapethBootnodes = []string{
+	// Cheapeth Foundation Go Bootnodes
+	"enode://060a97805e7f1bf3c3eafe285643f7e8da01c2b64ee2118c1ecb67bc9bd009be780abcd255586a1175eeda1b138d1b83e8179ffcf4e426af1a7002fdf09f826e@202.61.242.25:30303",
+	"enode://6900c538b62d782e49eceafaeff1a3a51afad9f404bf281f9cc4390dcd9618ac84d8f005f5796f2ab64900fab29b4bd2ed6b68920ae0e5a98f03f3db8761dea3@144.126.216.39:30303",
+}
+
 // RopstenBootnodes are the enode URLs of the P2P bootstrap nodes running on the
 // Ropsten test network.
 var RopstenBootnodes = []string{
@@ -104,6 +112,10 @@ func KnownDNSNetwork(genesis common.Hash, protocol string) string {
 	switch genesis {
 	case MainnetGenesisHash:
 		net = "mainnet"
+	case CheapethGenesisHash:
+		// currently no KnownDNSNetwork
+		net = "cheapeth"
+		return ""
 	case RopstenGenesisHash:
 		net = "ropsten"
 	case RinkebyGenesisHash:

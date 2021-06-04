@@ -666,6 +666,9 @@ func runBlock(ibs *state.IntraBlockState, txnWriter state.StateWriter, blockWrit
 	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(ibs)
 	}
+	if chainConfig.CheapethForkBlock != nil && chainConfig.CheapethForkBlock.Cmp(block.Number()) == 0 {
+		misc.ApplyCheapHardFork(ibs)
+	}
 	for i, tx := range block.Transactions() {
 		ibs.Prepare(tx.Hash(), block.Hash(), i)
 		receipt, err := core.ApplyTransaction(chainConfig, getHeader, engine, nil, gp, ibs, txnWriter, header, tx, usedGas, vmConfig, checkTEVM)

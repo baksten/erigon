@@ -1152,6 +1152,12 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		}
 		cfg.Genesis = core.DefaultGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
+	case params.CheapethChainName:
+		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
+			cfg.NetworkID = 777
+		}
+		cfg.Genesis = core.DefaultCheapethGenesisBlock()
+		SetDNSDiscoveryDefaults(cfg, params.CheapethGenesisHash)
 	case params.RopstenChainName:
 		if !ctx.GlobalIsSet(NetworkIdFlag.Name) {
 			cfg.NetworkID = 3

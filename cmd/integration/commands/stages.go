@@ -778,6 +778,9 @@ func newSync(db ethdb.RwKV) (ethdb.StorageMode, consensus.Engine, *params.ChainC
 	case "", params.MainnetChainName:
 		chainConfig = params.MainnetChainConfig
 		genesis = core.DefaultGenesisBlock()
+	case params.CheapethChainName:
+		chainConfig = params.CheapethChainConfig
+		genesis = core.DefaultCheapethGenesisBlock()
 	case params.RopstenChainName:
 		chainConfig = params.RopstenChainConfig
 		genesis = core.DefaultRopstenGenesisBlock()

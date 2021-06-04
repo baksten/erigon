@@ -108,6 +108,9 @@ func ExecuteBlockEphemerally(
 	if chainConfig.DAOForkSupport && chainConfig.DAOForkBlock != nil && chainConfig.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(ibs)
 	}
+	if chainConfig.CheapethForkBlock != nil && chainConfig.CheapethForkBlock.Cmp(block.Number()) == 0 {
+		misc.ApplyCheapHardFork(ibs)
+	}
 	noop := state.NewNoopWriter()
 	for i, tx := range block.Transactions() {
 		ibs.Prepare(tx.Hash(), block.Hash(), i)

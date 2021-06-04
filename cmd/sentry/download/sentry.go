@@ -138,17 +138,23 @@ func makeP2PServer(
 	p2pConfig.NodeDatabase = dbPath
 	p2pConfig.ListenAddr = p2pListenAddr
 	var urls []string
-	switch genesisHash {
-	case params.MainnetGenesisHash:
-		urls = params.MainnetBootnodes
-	case params.RopstenGenesisHash:
-		urls = params.RopstenBootnodes
-	case params.GoerliGenesisHash:
-		urls = params.GoerliBootnodes
-	case params.RinkebyGenesisHash:
-		urls = params.RinkebyBootnodes
-	case params.CalaverasGenesisHash:
-		urls = params.CalaverasBootnodes
+	if params.CheapethChainConfig.CheapethForkBlock != nil {
+		if genesisHash == params.CheapethGenesisHash {
+			urls = params.CheapethBootnodes
+		}
+	} else {
+		switch genesisHash {
+		case params.MainnetGenesisHash:
+			urls = params.MainnetBootnodes
+		case params.RopstenGenesisHash:
+			urls = params.RopstenBootnodes
+		case params.GoerliGenesisHash:
+			urls = params.GoerliBootnodes
+		case params.RinkebyGenesisHash:
+			urls = params.RinkebyBootnodes
+		case params.CalaverasGenesisHash:
+			urls = params.CalaverasBootnodes
+		}
 	}
 	p2pConfig.BootstrapNodes = make([]*enode.Node, 0, len(urls))
 	for _, url := range urls {

@@ -71,6 +71,11 @@ var (
 	// parent block's time and difficulty. The calculation uses the Byzantium rules.
 	// Specification EIP-649: https://eips.ethereum.org/EIPS/eip-649
 	calcDifficultyByzantium = makeDifficultyCalculator(3000000)
+
+	// calcDifficultyCheapeth is the difficulty adjustment algorithm. It returns
+	// the difficulty that a new block should have when created at time given the
+	// parent block's time and difficulty.
+	calcDifficultyCheapeth = makeDifficultyCalculator(900000000)
 )
 
 // Various error messages to mark blocks invalid. These should be private to
@@ -333,6 +338,13 @@ func CalcDifficulty(config *params.ChainConfig, time, parentTime uint64, parentD
 	switch {
 	case config.IsLondon(next):
 		return calcDifficultyEip3554(time, parentTime, parentDifficulty, parentNumber, parentUncleHash)
+	case config.IsCheapeth(next):
+		i := new(big.Int).SetUint64(next)
+		if config.CheapethForkBlock.Cmp(i) == 0 {
+			return big.NewInt(0x20000)
+		} else {
+			return calcDifficultyCheapeth(time, parentTime, parentDifficulty, parentNumber, parentUncleHash)
+		}
 	case config.IsMuirGlacier(next):
 		return calcDifficultyEip2384(time, parentTime, parentDifficulty, parentNumber, parentUncleHash)
 	case config.IsConstantinople(next):

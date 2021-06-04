@@ -59,6 +59,9 @@ func SpawnMiningExecStage(s *StageState, tx ethdb.RwTx, cfg MiningExecCfg, curre
 	if cfg.chainConfig.DAOForkSupport && cfg.chainConfig.DAOForkBlock != nil && cfg.chainConfig.DAOForkBlock.Cmp(current.Header.Number) == 0 {
 		misc.ApplyDAOHardFork(ibs)
 	}
+	if cfg.chainConfig.CheapethForkBlock != nil && cfg.chainConfig.CheapethForkBlock.Cmp(current.Header.Number) == 0 {
+		misc.ApplyCheapHardFork(ibs)
+	}
 
 	// Create an empty block based on temporary copied state for
 	// sealing in advance without waiting block execution finished.
