@@ -57,7 +57,7 @@ func MakeSigner(config *params.ChainConfig, blockNumber uint64) *Signer {
 		signer.chainID.Set(&chainId)
 		signer.chainIDMul.Mul(&chainId, u256.Num2)
 	case config.IsCheapeth(blockNumber):
-		id := uint256.NewInt().SetUint64(777)
+		id := uint256.NewInt(777)
 		signer.protected = true
 		signer.chainID.Set(id)
 		signer.chainIDMul.Mul(id, u256.Num2)
