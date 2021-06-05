@@ -82,10 +82,9 @@ func newTestBackendWithGenerator(t *testing.T, blocks int, generator func(int, *
 	txconfig := core.DefaultTxPoolConfig
 	txconfig.Journal = "" // Don't litter the disk with test journals
 
-	txCacher := core.NewTxSenderCacher(1)
 	b := &testBackend{
 		db:          db,
-		txpool:      core.NewTxPool(txconfig, params.TestChainConfig, db, txCacher),
+		txpool:      core.NewTxPool(txconfig, params.TestChainConfig, db),
 		headBlock:   headBlock,
 		genesis:     genesis,
 		chainConfig: params.TestChainConfig,
@@ -401,13 +400,13 @@ func testGetBlockReceipts(t *testing.T, protocol uint) {
 		switch i {
 		case 0:
 			// In block 1, the test bank sends account #1 some ether.
-			tx, _ := types.SignTx(types.NewTransaction(block.TxNonce(testAddr), acc1Addr, uint256.NewInt().SetUint64(10000), params.TxGas, nil, nil), *signer, testKey)
+			tx, _ := types.SignTx(types.NewTransaction(block.TxNonce(testAddr), acc1Addr, uint256.NewInt(10000), params.TxGas, nil, nil), *signer, testKey)
 			block.AddTx(tx)
 		case 1:
 			// In block 2, the test bank sends some more ether to account #1.
 			// acc1Addr passes it on to account #2.
-			tx1, _ := types.SignTx(types.NewTransaction(block.TxNonce(testAddr), acc1Addr, uint256.NewInt().SetUint64(1000), params.TxGas, nil, nil), *signer, testKey)
-			tx2, _ := types.SignTx(types.NewTransaction(block.TxNonce(acc1Addr), acc2Addr, uint256.NewInt().SetUint64(1000), params.TxGas, nil, nil), *signer, acc1Key)
+			tx1, _ := types.SignTx(types.NewTransaction(block.TxNonce(testAddr), acc1Addr, uint256.NewInt(1000), params.TxGas, nil, nil), *signer, testKey)
+			tx2, _ := types.SignTx(types.NewTransaction(block.TxNonce(acc1Addr), acc2Addr, uint256.NewInt(1000), params.TxGas, nil, nil), *signer, acc1Key)
 			block.AddTx(tx1)
 			block.AddTx(tx2)
 		case 2:
@@ -439,7 +438,7 @@ func testGetBlockReceipts(t *testing.T, protocol uint) {
 		block := rawdb.ReadHeaderByNumber(backend.db, i)
 
 		hashes = append(hashes, block.Hash())
-		receipts = append(receipts, rawdb.ReadReceiptsByHash(backend.db, block.Hash()))
+		receipts = append(receipts, rawdb.ReadReceiptsByHashDeprecated(backend.db, block.Hash()))
 	}
 	// Send the hash request and verify the response
 	if err := p2p.Send(peer.app, GetReceiptsMsg, hashes); err != nil {

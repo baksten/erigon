@@ -56,7 +56,7 @@ Examples:
 		erigoncli.ApplyFlagsForEthConfigCobra(cmd.Flags(), ethConfig)
 		miningConfig := params.MiningConfig{}
 		utils.SetupMinerCobra(cmd, &miningConfig)
-		db := openDatabase2(path.Join(cfg.DataDir, "erigon", "chaindata"), true, "", ethConfig.SnapshotMode)
+		db := openDB(path.Join(cfg.DataDir, "erigon", "chaindata"), true)
 		defer db.Close()
 		if err := syncBySmallSteps(db, miningConfig, ctx); err != nil {
 			log.Error("Error", "err", err)
@@ -77,7 +77,7 @@ var loopIhCmd = &cobra.Command{
 	Use: "loop_ih",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, _ := utils.RootContext()
-		db := openDatabase(chaindata, true)
+		db := openDB(chaindata, true)
 		defer db.Close()
 
 		if unwind == 0 {
@@ -96,7 +96,7 @@ var loopExecCmd = &cobra.Command{
 	Use: "loop_exec",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, _ := utils.RootContext()
-		db := openDatabase(chaindata, true)
+		db := openDB(chaindata, true)
 		defer db.Close()
 		if unwind == 0 {
 			unwind = 1
@@ -185,7 +185,7 @@ func syncBySmallSteps(db ethdb.RwKV, miningConfig params.MiningConfig, ctx conte
 
 	execUntilFunc := func(execToBlock uint64) func(stageState *stagedsync.StageState, unwinder stagedsync.Unwinder, tx ethdb.RwTx) error {
 		return func(s *stagedsync.StageState, unwinder stagedsync.Unwinder, tx ethdb.RwTx) error {
-			if err := stagedsync.SpawnExecuteBlocksStage(s, tx, execToBlock, quit, execCfg, nil); err != nil {
+			if err := stagedsync.SpawnExecuteBlocksStage(s, unwinder, tx, execToBlock, quit, execCfg, nil); err != nil {
 				return fmt.Errorf("spawnExecuteBlocksStage: %w", err)
 			}
 			return nil
@@ -361,7 +361,7 @@ func syncBySmallSteps(db ethdb.RwKV, miningConfig params.MiningConfig, ctx conte
 		}
 
 		to := execAtBlock - unwind
-		if err := stateStages.UnwindTo(to, tx); err != nil {
+		if err := stateStages.UnwindTo(to, tx, common.Hash{}); err != nil {
 			return err
 		}
 
@@ -518,7 +518,7 @@ func loopExec(db ethdb.RwKV, ctx context.Context, unwind uint64) error {
 
 	// set block limit of execute stage
 	sync.MockExecFunc(stages.Execution, func(stageState *stagedsync.StageState, unwinder stagedsync.Unwinder, tx ethdb.RwTx) error {
-		if err = stagedsync.SpawnExecuteBlocksStage(stageState, tx, to, ch, cfg, nil); err != nil {
+		if err = stagedsync.SpawnExecuteBlocksStage(stageState, sync, tx, to, ch, cfg, nil); err != nil {
 			return fmt.Errorf("spawnExecuteBlocksStage: %w", err)
 		}
 		return nil
