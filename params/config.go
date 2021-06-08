@@ -36,6 +36,7 @@ const (
 	ErigonMineName     = "erigonmine"
 	CalaverasChainName = "calaveras"
 	CheapethChainName  = "cheapeth"
+	SokolChainName     = "sokol"
 )
 
 // Genesis hashes to enforce below configs on.
@@ -47,6 +48,11 @@ var (
 	ErigonGenesisHash    = common.HexToHash("0xfecd5c85712e36f30f09ba3a42386b42c46b5ba5395a4246b952e655f9aa0f58")
 	CalaverasGenesisHash = common.HexToHash("0xeb9233d066c275efcdfed8037f4fc082770176aefdbcb7691c71da412a5670f2")
 	CheapethGenesisHash  = common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3")
+	SokolGenesisHash     = common.HexToHash("0x5b28c1bfd3a15230c9a46b399cd0f9a6920d432e85381cc6a140b06e8410112f")
+)
+
+var (
+	SokolGenesisStateRoot = common.HexToHash("0xfad4af258fd11939fae0c6c6eec9d340b1caac0b0196fd9a1bc3f489c5bf00b3")
 )
 
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
@@ -311,6 +317,28 @@ var (
 		MuirGlacierBlock:    nil,
 		BerlinBlock:         big.NewInt(0),
 		LondonBlock:         big.NewInt(500),
+		Clique: &CliqueConfig{
+			Period: 30,
+			Epoch:  30000,
+		},
+	}
+
+	SokolChainConfig = &ChainConfig{
+		ChainName:           SokolChainName,
+		ChainID:             big.NewInt(77),
+		HomesteadBlock:      big.NewInt(0),
+		DAOForkBlock:        nil,
+		DAOForkSupport:      true,
+		EIP150Block:         big.NewInt(0),
+		EIP155Block:         big.NewInt(0),
+		EIP158Block:         big.NewInt(0),
+		ByzantiumBlock:      big.NewInt(0),
+		ConstantinopleBlock: big.NewInt(0),
+		PetersburgBlock:     big.NewInt(0),
+		IstanbulBlock:       big.NewInt(0),
+		MuirGlacierBlock:    nil,
+		BerlinBlock:         big.NewInt(0),
+		//LondonBlock:         big.NewInt(0),
 		Clique: &CliqueConfig{
 			Period: 30,
 			Epoch:  30000,

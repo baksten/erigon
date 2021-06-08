@@ -154,6 +154,8 @@ func makeP2PServer(
 			urls = params.RinkebyBootnodes
 		case params.CalaverasGenesisHash:
 			urls = params.CalaverasBootnodes
+        case params.SokolGenesisHash:
+            urls = params.SokolBootnodes
 		}
 	}
 	p2pConfig.BootstrapNodes = make([]*enode.Node, 0, len(urls))

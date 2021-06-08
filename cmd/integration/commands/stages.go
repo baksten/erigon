@@ -722,6 +722,8 @@ func removeMigration(db ethdb.RwKV, ctx context.Context) error {
 
 func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.Engine, *params.ChainConfig, *vm.Config, *core.TxPool, *stagedsync.State, *stagedsync.StagedSync, chan *types.Block, chan *types.Block) {
 	tmpdir := path.Join(datadir, etl.TmpDirName)
+	snapshotDir = path.Join(datadir, "erigon", "snapshot")
+
 	var sm ethdb.StorageMode
 
 	var err error
@@ -756,6 +758,9 @@ func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.E
 	case params.CalaverasChainName:
 		chainConfig = params.CalaverasChainConfig
 		genesis = core.DefaultCalaverasGenesisBlock()
+	case params.SokolChainName:
+		chainConfig = params.SokolChainConfig
+		genesis = core.DefaultSokolGenesisBlock()
 	}
 	events := remotedbserver.NewEvents()
 
@@ -792,6 +797,7 @@ func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.E
 		bodyDownloadTimeoutSeconds,
 		downloadServer,
 		tmpdir,
+		snapshotDir,
 		txPool,
 		txPoolP2PServer,
 	)
