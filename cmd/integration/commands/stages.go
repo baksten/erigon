@@ -367,7 +367,7 @@ func stageBodies(db ethdb.RwKV, ctx context.Context) error {
 
 func stageSenders(db ethdb.RwKV, ctx context.Context) error {
 	tmpdir := path.Join(datadir, etl.TmpDirName)
-	_, _, _, _, _, sync, _, _, _ := newSync(ctx, db)
+	_, _, chainConfig, _, _, sync, _, _, _ := newSync(ctx, db)
 
 	tx, err := db.BeginRw(ctx)
 	if err != nil {
@@ -390,7 +390,7 @@ func stageSenders(db ethdb.RwKV, ctx context.Context) error {
 	ch := make(chan struct{})
 	defer close(ch)
 
-	cfg := stagedsync.StageSendersCfg(db, params.MainnetChainConfig, tmpdir)
+	cfg := stagedsync.StageSendersCfg(db, chainConfig, tmpdir)
 	if unwind > 0 {
 		u := &stagedsync.UnwindState{Stage: stages.Senders, UnwindPoint: stage3.BlockNumber - unwind}
 		err = stagedsync.UnwindSendersStage(u, stage3, tx, cfg)
@@ -411,9 +411,11 @@ func stageExec(db ethdb.RwKV, ctx context.Context) error {
 	sm, engine, chainConfig, vmConfig, _, sync, _, _, _ := newSync(ctx, db)
 
 	if reset {
-		if err := db.Update(ctx, func(tx ethdb.RwTx) error { return resetExec(tx) }); err != nil {
+		genesis, _ := byChain()
+		if err := db.Update(ctx, func(tx ethdb.RwTx) error { return resetExec(tx, genesis) }); err != nil {
 			return err
 		}
+		return nil
 	}
 	if txtrace {
 		// Activate tracing and writing into json files for each transaction
@@ -729,24 +731,9 @@ func removeMigration(db ethdb.RwKV, ctx context.Context) error {
 	})
 }
 
-func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.Engine, *params.ChainConfig, *vm.Config, *core.TxPool, *stagedsync.State, *stagedsync.StagedSync, chan *types.Block, chan *types.Block) {
-	tmpdir := path.Join(datadir, etl.TmpDirName)
-	snapshotDir = path.Join(datadir, "erigon", "snapshot")
-
-	var sm ethdb.StorageMode
-
-	var err error
-	if err = db.View(context.Background(), func(tx ethdb.Tx) error {
-		sm, err = ethdb.GetStorageModeFromDB(tx)
-		if err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		panic(err)
-	}
-	vmConfig := &vm.Config{NoReceipts: !sm.Receipts}
+func byChain() (*core.Genesis, *params.ChainConfig) {
 	var chainConfig *params.ChainConfig
+
 	var genesis *core.Genesis
 	switch chain {
 	case "", params.MainnetChainName:
@@ -771,6 +758,35 @@ func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.E
 		chainConfig = params.SokolChainConfig
 		genesis = core.DefaultSokolGenesisBlock()
 	}
+	return genesis, chainConfig
+}
+
+func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.Engine, *params.ChainConfig, *vm.Config, *core.TxPool, *stagedsync.State, *stagedsync.StagedSync, chan *types.Block, chan *types.Block) {
+	tmpdir := path.Join(datadir, etl.TmpDirName)
+	snapshotDir = path.Join(datadir, "erigon", "snapshot")
+
+	var sm ethdb.StorageMode
+
+	var err error
+	if err = db.View(context.Background(), func(tx ethdb.Tx) error {
+		sm, err = ethdb.GetStorageModeFromDB(tx)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		panic(err)
+	}
+	vmConfig := &vm.Config{NoReceipts: !sm.Receipts}
+
+	genesis, chainConfig := byChain()
+	var engine consensus.Engine
+	engine = ethash.NewFaker()
+	switch chain {
+	case params.SokolChainName:
+		engine = ethconfig.CreateConsensusEngine(chainConfig, &params.AuRaConfig{DBPath: path.Join(datadir, "aura")}, nil, false)
+	}
+
 	events := remotedbserver.NewEvents()
 
 	txPool := core.NewTxPool(ethconfig.Defaults.TxPool, chainConfig, db)
@@ -785,7 +801,6 @@ func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.E
 	must(batchSize.UnmarshalText([]byte(batchSizeStr)))
 	bodyDownloadTimeoutSeconds := 30 // TODO: convert to duration, make configurable
 
-	engine := ethash.NewFaker()
 	blockDownloaderWindow := 65536
 	downloadServer, err := download.NewControlServer(db, "", chainConfig, genesisBlock.Hash(), engine, 1, nil, blockDownloaderWindow)
 	if err != nil {
@@ -830,7 +845,7 @@ func newSync(ctx context.Context, db ethdb.RwKV) (ethdb.StorageMode, consensus.E
 
 	var sync *stagedsync.State
 	if err := db.View(context.Background(), func(tx ethdb.Tx) (err error) {
-		sync, err = st.Prepare(nil, chainConfig, engine, vmConfig, nil, tx, "integration_test", sm, tmpdir, 0, ctx.Done(), nil, nil, false, nil, nil)
+		sync, err = st.Prepare(vmConfig, nil, tx, sm, ctx.Done(), false, nil, nil)
 		if err != nil {
 			return nil
 		}

@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/core/rawdb"
@@ -31,7 +32,7 @@ import (
 	"github.com/ledgerwatch/erigon/crypto"
 	"github.com/ledgerwatch/erigon/eth/protocols/eth"
 	"github.com/ledgerwatch/erigon/ethdb"
-	"github.com/ledgerwatch/erigon/gointerfaces/sentry"
+	"github.com/ledgerwatch/erigon/ethdb/kv"
 	"github.com/ledgerwatch/erigon/p2p"
 	"github.com/ledgerwatch/erigon/p2p/enode"
 	"github.com/ledgerwatch/erigon/params"
@@ -86,7 +87,7 @@ func newTestBackendWithGenerator(t *testing.T, blocks int, generator func(int, *
 	txconfig.Journal = "" // Don't litter the disk with test journals
 
 	b := &testBackend{
-		db:          ethdb.NewObjectDatabase(m.DB),
+		db:          kv.NewObjectDatabase(m.DB),
 		txpool:      core.NewTxPool(txconfig, m.ChainConfig, m.DB),
 		headBlock:   headBlock,
 		genesis:     m.Genesis,

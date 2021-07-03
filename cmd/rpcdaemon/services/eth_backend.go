@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/ledgerwatch/erigon-lib/gointerfaces"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/ethdb/remote/remotedbserver"
-	"github.com/ledgerwatch/erigon/gointerfaces"
-	"github.com/ledgerwatch/erigon/gointerfaces/remote"
 	"github.com/ledgerwatch/erigon/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
@@ -22,6 +22,7 @@ import (
 type ApiBackend interface {
 	Etherbase(ctx context.Context) (common.Address, error)
 	NetVersion(ctx context.Context) (uint64, error)
+	NetPeerCount(ctx context.Context) (uint64, error)
 	ProtocolVersion(ctx context.Context) (uint64, error)
 	ClientVersion(ctx context.Context) (string, error)
 	Subscribe(ctx context.Context, cb func(*remote.SubscribeReply)) error
@@ -80,6 +81,18 @@ func (back *RemoteBackend) NetVersion(ctx context.Context) (uint64, error) {
 	}
 
 	return res.Id, nil
+}
+
+func (back *RemoteBackend) NetPeerCount(ctx context.Context) (uint64, error) {
+	res, err := back.remoteEthBackend.NetPeerCount(ctx, &remote.NetPeerCountRequest{})
+	if err != nil {
+		if s, ok := status.FromError(err); ok {
+			return 0, errors.New(s.Message())
+		}
+		return 0, err
+	}
+
+	return res.Count, nil
 }
 
 func (back *RemoteBackend) ProtocolVersion(ctx context.Context) (uint64, error) {

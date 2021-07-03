@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/ledgerwatch/erigon-lib/gointerfaces"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/remote"
+	types2 "github.com/ledgerwatch/erigon-lib/gointerfaces/types"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/gointerfaces"
-	"github.com/ledgerwatch/erigon/gointerfaces/remote"
-	types2 "github.com/ledgerwatch/erigon/gointerfaces/types"
 	"github.com/ledgerwatch/erigon/log"
 	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/erigon/rlp"
@@ -17,7 +17,8 @@ import (
 
 // EthBackendAPIVersion
 // 2.0.0 - move all mining-related methods to 'txpool/mining' server
-var EthBackendAPIVersion = &types2.VersionReply{Major: 2, Minor: 0, Patch: 0}
+// 2.1.0 - add NetPeerCount function
+var EthBackendAPIVersion = &types2.VersionReply{Major: 2, Minor: 1, Patch: 0}
 
 type EthBackendServer struct {
 	remote.UnimplementedETHBACKENDServer // must be embedded to have forward compatible implementations.
@@ -29,6 +30,7 @@ type EthBackendServer struct {
 type EthBackend interface {
 	Etherbase() (common.Address, error)
 	NetVersion() (uint64, error)
+	NetPeerCount() (uint64, error)
 }
 
 func NewEthBackendServer(eth EthBackend, events *Events) *EthBackendServer {
@@ -57,6 +59,14 @@ func (s *EthBackendServer) NetVersion(_ context.Context, _ *remote.NetVersionReq
 		return &remote.NetVersionReply{}, err
 	}
 	return &remote.NetVersionReply{Id: id}, nil
+}
+
+func (s *EthBackendServer) NetPeerCount(_ context.Context, _ *remote.NetPeerCountRequest) (*remote.NetPeerCountReply, error) {
+	id, err := s.eth.NetPeerCount()
+	if err != nil {
+		return &remote.NetPeerCountReply{}, err
+	}
+	return &remote.NetPeerCountReply{Count: id}, nil
 }
 
 func (s *EthBackendServer) Subscribe(r *remote.SubscribeRequest, subscribeServer remote.ETHBACKEND_SubscribeServer) error {

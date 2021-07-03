@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
 	"github.com/ledgerwatch/erigon/cmd/sentry/download"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/common/dbutils"
@@ -61,6 +62,7 @@ import (
 	"github.com/ledgerwatch/erigon/turbo/remote"
 	"github.com/ledgerwatch/erigon/turbo/snapshotsync"
 	stages2 "github.com/ledgerwatch/erigon/turbo/stages"
+	"github.com/ledgerwatch/erigon/turbo/stages/txpropagate"
 	"github.com/ledgerwatch/erigon/turbo/txpool"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -87,8 +89,6 @@ type Ethereum struct {
 	etherbase common.Address
 
 	networkID uint64
-
-	p2pServer *p2p.Server
 
 	torrentClient *snapshotsync.Client
 
@@ -174,7 +174,6 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		chainKV:              chainDb.(ethdb.HasRwKV).RwKV(),
 		networkID:            config.NetworkID,
 		etherbase:            config.Miner.Etherbase,
-		p2pServer:            stack.Server(),
 		torrentClient:        torrentClient,
 		chainConfig:          chainConfig,
 		genesisHash:          genesis.Hash(),
@@ -189,6 +188,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if chainConfig.Clique != nil {
 		consensusConfig = &config.Clique
 	} else if chainConfig.Aura != nil {
+		config.Aura.Etherbase = config.Miner.Etherbase
 		consensusConfig = &config.Aura
 	} else {
 		consensusConfig = &config.Ethash
@@ -372,8 +372,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		backend.sentryServers = append(backend.sentryServers, server65)
 		backend.sentries = append(backend.sentries, remote.NewSentryClientDirect(eth.ETH65, server65))
 	}
-	blockDownloaderWindow := 65536
-	backend.downloadServer, err = download.NewControlServer(chainDb.RwKV(), stack.Config().NodeName(), chainConfig, genesis.Hash(), backend.engine, backend.config.NetworkID, backend.sentries, blockDownloaderWindow)
+	backend.downloadServer, err = download.NewControlServer(chainDb.RwKV(), stack.Config().NodeName(), chainConfig, genesis.Hash(), backend.engine, backend.config.NetworkID, backend.sentries, config.BlockDownloaderWindow)
 	if err != nil {
 		return nil, err
 	}
@@ -411,17 +410,20 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		log.Info("Set torrent params", "snapshotsDir", snapshotsDir)
 	}
 
-	go SendPendingTxsToRpcDaemon(backend.txPool, backend.events)
+	go txpropagate.BroadcastNewTxsToNetworks(backend.downloadV2Ctx, backend.txPool, backend.downloadServer)
 
 	go func() {
-		defer func() { debug.LogPanic(nil, true, recover()) }()
+		defer debug.LogPanic()
 		for {
 			select {
 			case b := <-backend.minedBlocks:
-				// todo: broadcast p2p
+				//p2p
+				//backend.downloadServer.BroadcastNewBlock(context.Background(), b, b.Difficulty())
+				//rpcdaemon
 				if err := miningRPC.BroadcastMinedBlock(b); err != nil {
 					log.Error("txpool rpc mined block broadcast", "err", err)
 				}
+
 			case b := <-backend.pendingBlocks:
 				if err := miningRPC.BroadcastPendingBlock(b); err != nil {
 					log.Error("txpool rpc pending block broadcast", "err", err)
@@ -449,27 +451,6 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	return backend, nil
 }
 
-const txChanSize int = 4096
-
-func SendPendingTxsToRpcDaemon(txPool *core.TxPool, notifier *remotedbserver.Events) {
-	defer func() { debug.LogPanic(nil, true, recover()) }()
-	if notifier == nil {
-		return
-	}
-
-	txsCh := make(chan core.NewTxsEvent, txChanSize)
-	txsSub := txPool.SubscribeNewTxsEvent(txsCh)
-	defer txsSub.Unsubscribe()
-
-	for {
-		select {
-		case e := <-txsCh:
-			notifier.OnNewPendingTxs(e.Txs)
-		case <-txsSub.Err():
-			return
-		}
-	}
-}
 func (s *Ethereum) APIs() []rpc.API {
 	return []rpc.API{}
 }
@@ -567,9 +548,9 @@ func (s *Ethereum) StartMining(ctx context.Context, kv ethdb.RwKV, mining *stage
 	}
 
 	go func() {
-		defer func() { debug.LogPanic(nil, true, recover()) }()
+		defer debug.LogPanic()
 		defer close(s.waitForMiningStop)
-		newTransactions := make(chan core.NewTxsEvent, txChanSize)
+		newTransactions := make(chan core.NewTxsEvent, 128)
 		sub := s.txPool.SubscribeNewTxsEvent(newTransactions)
 		defer sub.Unsubscribe()
 		defer close(newTransactions)
@@ -612,6 +593,22 @@ func (s *Ethereum) IsMining() bool { return s.config.Miner.Enabled }
 func (s *Ethereum) TxPool() *core.TxPool        { return s.txPool }
 func (s *Ethereum) ChainKV() ethdb.RwKV         { return s.chainKV }
 func (s *Ethereum) NetVersion() (uint64, error) { return s.networkID, nil }
+func (s *Ethereum) NetPeerCount() (uint64, error) {
+	var sentryPc uint64 = 0
+
+	log.Trace("sentry", "peer count", sentryPc)
+	for _, sc := range s.sentries {
+		ctx := context.Background()
+		reply, err := sc.PeerCount(ctx, &sentry.PeerCountRequest{})
+		if err != nil {
+			log.Warn("sentry", "err", err)
+			return 0, nil
+		}
+		sentryPc += reply.Count
+	}
+
+	return sentryPc, nil
+}
 
 // Protocols returns all the currently configured
 // network protocols to start.
@@ -627,8 +624,12 @@ func (s *Ethereum) Protocols() []p2p.Protocol {
 // Ethereum protocol implementation.
 func (s *Ethereum) Start() error {
 	for i := range s.sentries {
-		go download.RecvMessageLoop(s.downloadV2Ctx, s.sentries[i], s.downloadServer, nil)
-		go download.RecvUploadMessageLoop(s.downloadV2Ctx, s.sentries[i], s.downloadServer, nil)
+		go func(i int) {
+			download.RecvMessageLoop(s.downloadV2Ctx, s.sentries[i], s.downloadServer, nil)
+		}(i)
+		go func(i int) {
+			download.RecvUploadMessageLoop(s.downloadV2Ctx, s.sentries[i], s.downloadServer, nil)
+		}(i)
 	}
 
 	go Loop(s.downloadV2Ctx, s.chainKV, s.stagedSync2, s.downloadServer, s.events, s.config.StateStream, s.waitForStageLoopStop)
@@ -673,7 +674,7 @@ func (s *Ethereum) Stop() error {
 
 //Deprecated - use stages.StageLoop
 func Loop(ctx context.Context, db ethdb.RwKV, sync *stagedsync.StagedSync, controlServer *download.ControlServerImpl, notifier stagedsync.ChainEventNotifier, stateStream bool, waitForDone chan struct{}) {
-	defer func() { debug.LogPanic(nil, true, recover()) }()
+	defer debug.LogPanic()
 	stages2.StageLoop(
 		ctx,
 		db,

@@ -30,6 +30,7 @@ import (
 	"github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/erigon/crypto"
 	"github.com/ledgerwatch/erigon/ethdb"
+	"github.com/ledgerwatch/erigon/ethdb/kv"
 	"github.com/ledgerwatch/erigon/params"
 	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/turbo/stages"
@@ -85,8 +86,8 @@ func TestSokolHeaderRLP(t *testing.T) {
 		require.NoError(err)
 		require.Equal(2, len(h.Seal))
 
-		expectSeal2 := common.FromHex("0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
-		require.Equal(common.FromHex(""), h.Seal[0])
+		expectSeal2 := rlp.RawValue(common.FromHex("0xb8410000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"))
+		require.Equal(rlp.RawValue(common.FromHex("0x80")), h.Seal[0])
 		require.Equal(expectSeal2, h.Seal[1])
 		enc, err := rlp.EncodeToBytes(h)
 		require.NoError(err)
@@ -99,9 +100,9 @@ func TestSokolHeaderRLP(t *testing.T) {
 		err := rlp.DecodeBytes(enc, h)
 		require.NoError(err)
 		require.Equal(2, len(h.Seal))
-		require.Equal(common.FromHex("2"), h.Seal[0])
+		require.Equal(rlp.RawValue(common.FromHex("0x2")), h.Seal[0])
 
-		expectSeal2 := common.FromHex("0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001")
+		expectSeal2 := rlp.RawValue(common.FromHex("0xb8410000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001"))
 		require.Equal(expectSeal2, h.Seal[1])
 
 		res, err := rlp.EncodeToBytes(h) // after encode getting source bytes
@@ -224,7 +225,7 @@ func TestSetupGenesis(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			db := ethdb.NewTestKV(t)
+			db := kv.NewTestKV(t)
 			config, genesis, err := test.fn(db)
 			// Check the return values.
 			if !reflect.DeepEqual(err, test.wantErr) {

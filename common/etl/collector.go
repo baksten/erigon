@@ -165,7 +165,6 @@ func loadFilesIntoBucket(logPrefix string, db ethdb.RwTx, bucket string, provide
 
 	logEvery := time.NewTicker(30 * time.Second)
 	defer logEvery.Stop()
-	var pervK, pervV []byte
 
 	i := 0
 	loadNextFunc := func(originalK, k, v []byte) error {
@@ -186,7 +185,7 @@ func loadFilesIntoBucket(logPrefix string, db ethdb.RwTx, bucket string, provide
 			}
 
 			runtime.ReadMemStats(&m)
-			logArs = append(logArs, "alloc", common.StorageSize(m.Alloc), "sys", common.StorageSize(m.Sys), "numGC", int(m.NumGC))
+			logArs = append(logArs, "alloc", common.StorageSize(m.Alloc), "sys", common.StorageSize(m.Sys))
 			log.Info(fmt.Sprintf("[%s] ETL [2/2] Loading", logPrefix), logArs...)
 		}
 
@@ -201,22 +200,13 @@ func loadFilesIntoBucket(logPrefix string, db ethdb.RwTx, bucket string, provide
 		}
 		if canUseAppend {
 			if isDupSort {
-				if bytes.Equal(k, pervK) {
-					if err := c.(ethdb.RwCursorDupSort).AppendDup(k, v); err != nil {
-						return fmt.Errorf("%s: bucket: %s, appendDup: k=%x, pervK=%x %w", logPrefix, bucket, k, pervK, err)
-					}
-				} else {
-					if err := c.Append(k, v); err != nil {
-						return fmt.Errorf("%s: bucket: %s, append: k=%x, pervK=%x, %w", logPrefix, bucket, k, pervK, err)
-					}
+				if err := c.(ethdb.RwCursorDupSort).AppendDup(k, v); err != nil {
+					return fmt.Errorf("%s: bucket: %s, appendDup: k=%x, %w", logPrefix, bucket, k, err)
 				}
-				pervK = k
 			} else {
 				if err := c.Append(k, v); err != nil {
-					return fmt.Errorf("%s: bucket: %s, append: k=%x, v=%x,prevK=%x, prevV=%x, %w", logPrefix, bucket, k, v, pervK, pervV, err)
+					return fmt.Errorf("%s: bucket: %s, append: k=%x, v=%x, %w", logPrefix, bucket, k, v, err)
 				}
-				pervK = k
-				pervV = v
 			}
 
 			return nil
@@ -251,7 +241,7 @@ func loadFilesIntoBucket(logPrefix string, db ethdb.RwTx, bucket string, provide
 		"bucket", bucket,
 		"records", i,
 		"current key", makeCurrentKeyStr(nil),
-		"alloc", common.StorageSize(m.Alloc), "sys", common.StorageSize(m.Sys), "numGC", int(m.NumGC))
+		"alloc", common.StorageSize(m.Alloc), "sys", common.StorageSize(m.Sys))
 
 	return nil
 }

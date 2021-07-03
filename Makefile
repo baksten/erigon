@@ -1,24 +1,15 @@
 GOBIN = $(CURDIR)/build/bin
-GOTEST = GODEBUG=cgocheck=2 go test ./... -p 1
+GOTEST = GODEBUG=cgocheck=0 go test ./... -p 2
 
 GIT_COMMIT ?= $(shell git rev-list -1 HEAD)
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 GIT_TAG    ?= $(shell git describe --tags)
 GOBUILD = env GO111MODULE=on go build -trimpath -ldflags "-X github.com/ledgerwatch/erigon/params.GitCommit=${GIT_COMMIT} -X github.com/ledgerwatch/erigon/params.GitBranch=${GIT_BRANCH} -X github.com/ledgerwatch/params.GitTag=${GIT_TAG}"
-GO_DBG_BUILD = env CGO_CFLAGS='-O0 -g -DMDBX_BUILD_FLAGS_CONFIG="config.h"' GODEBUG=cgocheck=2 go build -trimpath -tags=debug -ldflags "-X github.com/ledgerwatch/erigon/params.GitCommit=${GIT_COMMIT} -X github.com/ledgerwatch/erigon/params.GitBranch=${GIT_BRANCH} -X github.com/ledgerwatch/erigon/params.GitTag=${GIT_TAG}" -gcflags=all="-N -l"  # see delve docs
+GO_DBG_BUILD = go build -trimpath -tags=debug -ldflags "-X github.com/ledgerwatch/erigon/params.GitCommit=${GIT_COMMIT} -X github.com/ledgerwatch/erigon/params.GitBranch=${GIT_BRANCH} -X github.com/ledgerwatch/erigon/params.GitTag=${GIT_TAG}" -gcflags=all="-N -l"  # see delve docs
 
 GO_MAJOR_VERSION = $(shell go version | cut -c 14- | cut -d' ' -f1 | cut -d'.' -f1)
 GO_MINOR_VERSION = $(shell go version | cut -c 14- | cut -d' ' -f1 | cut -d'.' -f2)
 
-OS = $(shell uname -s)
-ARCH = $(shell uname -m)
-
-ifeq ($(OS),Darwin)
-PROTOC_OS := osx
-endif
-ifeq ($(OS),Linux)
-PROTOC_OS = linux
-endif
 all: erigon hack rpctest state pics rpcdaemon integration db-tools sentry
 
 go-version:
@@ -34,12 +25,12 @@ docker-compose:
 	docker-compose up
 
 # debug build allows see C stack traces, run it with GOTRACEBACK=crash. You don't need debug build for C pit for profiling. To profile C code use SETCGOTRCKEBACK=1
-dbg: mdbx-dbg
+dbg:
 	$(GO_DBG_BUILD) -o $(GOBIN)/ ./cmd/...
 
 geth: erigon
 
-erigon: go-version mdbx
+erigon: go-version
 	@echo "Building Erigon"
 	rm -f $(GOBIN)/tg # Remove old binary to prevent confusion where users still use it because of the scripts
 	$(GOBUILD) -o $(GOBIN)/erigon ./cmd/erigon
@@ -108,52 +99,36 @@ tracker:
 	@echo "Done building."
 	@echo "Run \"$(GOBIN)/tracker\" to run snapshots tracker."
 
-db-tools: mdbx
-	@echo "Building bb-tools"
-
-	cd ethdb/mdbx/dist/ && MDBX_BUILD_TIMESTAMP=unknown make tools
-	cp ethdb/mdbx/dist/mdbx_chk $(GOBIN)
-	cp ethdb/mdbx/dist/mdbx_copy $(GOBIN)
-	cp ethdb/mdbx/dist/mdbx_dump $(GOBIN)
-	cp ethdb/mdbx/dist/mdbx_drop $(GOBIN)
-	cp ethdb/mdbx/dist/mdbx_load $(GOBIN)
-	cp ethdb/mdbx/dist/mdbx_stat $(GOBIN)
+db-tools: libmdbx
+	@echo "Building db-tools"
+	git submodule update --init --recursive
+	cd libmdbx && MDBX_BUILD_TIMESTAMP=unknown make tools
+	cp libmdbx/mdbx_chk $(GOBIN)
+	cp libmdbx/mdbx_copy $(GOBIN)
+	cp libmdbx/mdbx_dump $(GOBIN)
+	cp libmdbx/mdbx_drop $(GOBIN)
+	cp libmdbx/mdbx_load $(GOBIN)
+	cp libmdbx/mdbx_stat $(GOBIN)
 	@echo "Run \"$(GOBIN)/mdbx_stat -h\" to get info about mdbx db file."
 
-mdbx:
-	@echo "Building mdbx"
-	@cd ethdb/mdbx/dist/ \
-		&& make clean && MDBX_BUILD_TIMESTAMP=unknown make config.h \
-		&& echo '#define MDBX_DEBUG 0' >> config.h \
-		&& echo '#define MDBX_FORCE_ASSERTIONS 0' >> config.h \
-        && CFLAGS_EXTRA="-Wno-deprecated-declarations" make mdbx-static.o
-
-mdbx-dbg:
-	@echo "Building mdbx"
-	@cd ethdb/mdbx/dist/ \
-		&& make clean && make config.h \
-		&& echo '#define MDBX_DEBUG 1' >> config.h \
-		&& echo '#define MDBX_FORCE_ASSERTIONS 1' >> config.h \
-        && CFLAGS_EXTRA="-Wno-deprecated-declarations" CFLAGS='-O0 -g -Wall -Werror -Wextra -Wpedantic -ffunction-sections -fPIC -fvisibility=hidden -std=gnu11 -pthread -Wno-error=attributes' make mdbx-static.o
-
-test: mdbx
+test:
 	$(GOTEST) --timeout 30m
 
 lint:
 	@./build/bin/golangci-lint run --config ./.golangci.yml
 
-lintci: mdbx
+lintci:
 	@echo "--> Running linter for code"
 	@./build/bin/golangci-lint run --config ./.golangci.yml
 
 lintci-deps:
 	rm -f ./build/bin/golangci-lint
-	curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b ./build/bin v1.40.1
+	curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b ./build/bin v1.41.1
 
 clean:
 	env GO111MODULE=on go clean -cache
 	rm -fr build/*
-	cd ethdb/mdbx/dist/ && make clean
+	cd libmdbx/ && make clean
 
 # The devtools target installs tools required for 'go generate'.
 # You need to put $GOBIN (or $GOPATH/bin) in your PATH to use 'go generate'.
@@ -167,6 +142,7 @@ devtools:
 	$(GOBUILD) -o $(GOBIN)/abigen ./cmd/abigen
 	PATH=$(GOBIN):$(PATH) go generate ./common
 	PATH=$(GOBIN):$(PATH) go generate ./core/types
+	PATH=$(GOBIN):$(PATH) go generate ./consensus/aura/...
 	@type "npm" 2> /dev/null || echo 'Please install node.js and npm'
 	@type "solc" 2> /dev/null || echo 'Please install solc'
 	@type "protoc" 2> /dev/null || echo 'Please install protoc'
@@ -174,30 +150,6 @@ devtools:
 bindings:
 	PATH=$(GOBIN):$(PATH) go generate ./tests/contracts/
 	PATH=$(GOBIN):$(PATH) go generate ./core/state/contracts/
-
-grpc:
-	# See also: ./cmd/hack/binary-deps/main.go
-	mkdir -p ./build/bin/
-	rm -f ./build/bin/protoc*
-	rm -rf ./build/include*
-
-	$(eval PROTOC_TMP := $(shell mktemp -d))
-	cd $(PROTOC_TMP); curl -sSL https://github.com/protocolbuffers/protobuf/releases/download/v3.17.3/protoc-3.17.3-$(PROTOC_OS)-$(ARCH).zip -o protoc.zip
-	cd $(PROTOC_TMP); unzip protoc.zip && mv bin/protoc $(GOBIN) && mv include $(GOBIN)/..
-
-	$(GOBUILD) -o $(GOBIN)/protoc-gen-go google.golang.org/protobuf/cmd/protoc-gen-go # generates proto messages
-	$(GOBUILD) -o $(GOBIN)/protoc-gen-go-grpc google.golang.org/grpc/cmd/protoc-gen-go-grpc # generates grpc services
-	PATH=$(GOBIN):$(PATH) protoc --proto_path=interfaces --go_out=gointerfaces -I=build/include/google \
-		types/types.proto
-	PATH=$(GOBIN):$(PATH) protoc --proto_path=interfaces --go_out=gointerfaces --go-grpc_out=gointerfaces -I=build/include/google \
-		--go_opt=Mtypes/types.proto=github.com/ledgerwatch/erigon/gointerfaces/types \
-		--go-grpc_opt=Mtypes/types.proto=github.com/ledgerwatch/erigon/gointerfaces/types \
-		p2psentry/sentry.proto \
-		remote/kv.proto remote/ethbackend.proto \
-		snapshot_downloader/external_downloader.proto \
-		consensus_engine/consensus.proto \
-		testing/testing.proto \
-		txpool/txpool.proto txpool/mining.proto
 
 prometheus:
 	docker-compose up prometheus grafana

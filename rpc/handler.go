@@ -133,6 +133,13 @@ func (h *handler) handleBatch(msgs []*jsonrpcMessage, stream *jsoniter.Stream) {
 				break
 			}
 		}
+		if !allMethodsAreThreadSafe && stream == nil {
+			_ = h.conn.writeJSON(context.Background(), jsonrpcMessage{Version: vsn, ID: null, Error: &jsonError{
+				Code:    -32601,
+				Message: "streamable methods are not supported on websockets. help us to implement",
+			}})
+			return
+		}
 
 		answers := make([]*jsonrpcMessage, 0, len(msgs))
 		if allMethodsAreThreadSafe {
@@ -446,9 +453,11 @@ func (h *handler) runMethod(ctx context.Context, msg *jsonrpcMessage, callb *cal
 		stream.WriteObjectField("jsonrpc")
 		stream.WriteString("2.0")
 		stream.WriteMore()
-		stream.WriteObjectField("id")
-		stream.Write(msg.ID)
-		stream.WriteMore()
+		if msg.ID != nil {
+			stream.WriteObjectField("id")
+			stream.Write(msg.ID)
+			stream.WriteMore()
+		}
 		stream.WriteObjectField("result")
 		_, err := callb.call(ctx, msg.Method, args, stream)
 		if err != nil {
@@ -462,6 +471,9 @@ func (h *handler) runMethod(ctx context.Context, msg *jsonrpcMessage, callb *cal
 			} else {
 				stream.WriteInt(defaultErrorCode)
 			}
+			stream.WriteMore()
+			stream.WriteObjectField("message")
+			stream.WriteString(fmt.Sprintf("%v", err))
 			de, ok := err.(DataError)
 			if ok {
 				stream.WriteMore()
