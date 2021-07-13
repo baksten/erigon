@@ -41,7 +41,10 @@ func (api *APIImpl) CallBundle(ctx context.Context, txHashes []common.Hash, stat
 	var txs types.Transactions
 
 	for _, txHash := range txHashes {
-		txn, _, _, _ := rawdb.ReadTransaction(tx, txHash)
+		txn, _, _, _, err := rawdb.ReadTransaction(tx, txHash)
+		if err != nil {
+			return nil, err
+		}
 		if txn == nil {
 			return nil, nil // not error, see https://github.com/ledgerwatch/turbo-geth/issues/1645
 		}
@@ -96,7 +99,6 @@ func (api *APIImpl) CallBundle(ctx context.Context, txHashes []common.Hash, stat
 		timeoutMilliSeconds = *timeoutMilliSecondsPtr
 	}
 	timeout := time.Millisecond * time.Duration(timeoutMilliSeconds)
-
 	// Setup context so it may be cancelled the call has completed
 	// or, in case of unmetered gas, setup a context with a timeout.
 	var cancel context.CancelFunc

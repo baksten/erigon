@@ -68,7 +68,11 @@ func RecvUploadMessageLoop(ctx context.Context,
 		default:
 		}
 
-		SentryHandshake(ctx, sentry, cs)
+		if err := SentryHandshake(ctx, sentry, cs); err != nil {
+			log.Error("[RecvUploadMessage] sentry not ready yet", "err", err)
+			time.Sleep(time.Second)
+			continue
+		}
 		if err := RecvUploadMessage(ctx, sentry, cs.HandleInboundMessage, wg); err != nil {
 			log.Error("[RecvUploadMessage]", "err", err)
 		}
@@ -143,10 +147,13 @@ func RecvMessageLoop(ctx context.Context,
 		default:
 		}
 
-		SentryHandshake(ctx, sentry, cs)
+		if err := SentryHandshake(ctx, sentry, cs); err != nil {
+			log.Error("[RecvMessage] sentry not ready yet", "err", err)
+			time.Sleep(time.Second)
+			continue
+		}
 		if err := RecvMessage(ctx, sentry, cs.HandleInboundMessage, wg); err != nil {
 			log.Error("[RecvMessage]", "err", err)
-
 		}
 	}
 }
@@ -216,14 +223,14 @@ func RecvMessage(
 	}
 }
 
-func SentryHandshake(ctx context.Context, sentry remote.SentryClient, controlServer *ControlServerImpl) {
+func SentryHandshake(ctx context.Context, sentry remote.SentryClient, controlServer *ControlServerImpl) error {
 	_, err := sentry.SetStatus(ctx, makeStatusData(controlServer), grpc.WaitForReady(true))
 	if err != nil {
 		if s, ok := status.FromError(err); ok && s.Code() == codes.Canceled {
-			return
+			return nil
 		}
-		log.Error("sentry not ready yet", "err", err)
 	}
+	return nil
 }
 
 type ControlServerImpl struct {
@@ -623,6 +630,9 @@ func (cs *ControlServerImpl) getBlockHeaders66(ctx context.Context, inreq *proto
 	}
 	_, err = sentry.SendMessageById(ctx, &outreq, &grpc.EmptyCallOption{})
 	if err != nil {
+		if !isPeerNotFoundErr(err) {
+			return fmt.Errorf("send header response 65: %v", err)
+		}
 		return fmt.Errorf("send header response 66: %v", err)
 	}
 	//log.Info(fmt.Sprintf("[%s] GetBlockHeaderMsg{hash=%x, number=%d, amount=%d, skip=%d, reverse=%t, responseLen=%d}", string(gointerfaces.ConvertH512ToBytes(inreq.PeerId)), query.Origin.Hash, query.Origin.Number, query.Amount, query.Skip, query.Reverse, len(b)))
@@ -658,7 +668,9 @@ func (cs *ControlServerImpl) getBlockHeaders65(ctx context.Context, inreq *proto
 	}
 	_, err = sentry.SendMessageById(ctx, &outreq, &grpc.EmptyCallOption{})
 	if err != nil {
-		return fmt.Errorf("send header response 65: %v", err)
+		if !isPeerNotFoundErr(err) {
+			return fmt.Errorf("send header response 65: %v", err)
+		}
 	}
 	//log.Info(fmt.Sprintf("[%s] GetBlockHeaderMsg{hash=%x, number=%d, amount=%d, skip=%d, reverse=%t, responseLen=%d}", string(gointerfaces.ConvertH512ToBytes(inreq.PeerId)), query.Origin.Hash, query.Origin.Number, query.Amount, query.Skip, query.Reverse, len(b)))
 	return nil

@@ -115,6 +115,7 @@ type genesisSpecMarshaling struct {
 	GasUsed    math.HexOrDecimal64
 	Number     math.HexOrDecimal64
 	Difficulty *math.HexOrDecimal256
+	BaseFee    *math.HexOrDecimal256
 	Alloc      map[common.UnprefixedAddress]GenesisAccount
 }
 
@@ -352,7 +353,7 @@ func (g *Genesis) ToBlock() (*types.Block, *state.IntraBlockState, error) {
 				statedb.SetIncarnation(addr, 1)
 			}
 		}
-		if err := statedb.FinalizeTx(context.Background(), w); err != nil {
+		if err := statedb.FinalizeTx(params.Rules{}, w); err != nil {
 			panic(err)
 		}
 		root, err = trie.CalcRoot("genesis", tx)
@@ -428,7 +429,7 @@ func (g *Genesis) WriteGenesisState(tx ethdb.RwTx, history bool) (*types.Block, 
 
 	blockWriter := state.NewPlainStateWriter(tx, tx, 0)
 
-	if err := statedb.CommitBlock(context.Background(), blockWriter); err != nil {
+	if err := statedb.CommitBlock(params.Rules{}, blockWriter); err != nil {
 		return nil, statedb, fmt.Errorf("cannot write state: %v", err)
 	}
 	if err := blockWriter.WriteChangeSets(); err != nil {

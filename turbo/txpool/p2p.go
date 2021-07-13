@@ -7,20 +7,22 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ledgerwatch/erigon-lib/gointerfaces"
 	proto_sentry "github.com/ledgerwatch/erigon-lib/gointerfaces/sentry"
 	"github.com/ledgerwatch/erigon/cmd/sentry/download"
 	"github.com/ledgerwatch/erigon/common"
+	"github.com/ledgerwatch/erigon/common/debug"
 	"github.com/ledgerwatch/erigon/core"
 	"github.com/ledgerwatch/erigon/eth/fetcher"
 	"github.com/ledgerwatch/erigon/eth/protocols/eth"
 	"github.com/ledgerwatch/erigon/log"
 	"github.com/ledgerwatch/erigon/rlp"
 	"github.com/ledgerwatch/erigon/turbo/remote"
+	"github.com/ledgerwatch/erigon/turbo/stages/txpropagate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,17 +30,19 @@ import (
 
 // P2PServer - receiving and sending messages to Sentries
 type P2PServer struct {
-	ctx       context.Context
-	Sentries  []remote.SentryClient
-	TxPool    *core.TxPool
-	TxFetcher *fetcher.TxFetcher
+	ctx         context.Context
+	Sentries    []remote.SentryClient
+	TxPool      *core.TxPool
+	TxFetcher   *fetcher.TxFetcher
+	RecentPeers *txpropagate.RecentlyConnectedPeers
 }
 
 func NewP2PServer(ctx context.Context, sentries []remote.SentryClient, txPool *core.TxPool) (*P2PServer, error) {
 	cs := &P2PServer{
-		ctx:      ctx,
-		Sentries: sentries,
-		TxPool:   txPool,
+		ctx:         ctx,
+		Sentries:    sentries,
+		TxPool:      txPool,
+		RecentPeers: &txpropagate.RecentlyConnectedPeers{},
 	}
 
 	return cs, nil
@@ -148,7 +152,6 @@ func (tp *P2PServer) getPooledTransactions65(ctx context.Context, inreq *proto_s
 
 func (tp *P2PServer) SendTxsRequest(ctx context.Context, peerID string, hashes []common.Hash) []byte {
 	var outreq65, outreq66 *proto_sentry.SendMessageByIdRequest
-	var lastErr error
 
 	// if sentry not found peers to send such message, try next one. stop if found.
 	for i, ok, next := tp.randSentryIndex(); ok; i, ok = next() {
@@ -172,7 +175,10 @@ func (tp *P2PServer) SendTxsRequest(ctx context.Context, peerID string, hashes [
 			}
 
 			if sentPeers, err1 := tp.Sentries[i].SendMessageById(ctx, outreq65, &grpc.EmptyCallOption{}); err1 != nil {
-				lastErr = err1
+				if isPeerNotFoundErr(err1) {
+					continue
+				}
+				log.Error("[SendTxsRequest]", "err", err1)
 			} else if sentPeers != nil && len(sentPeers.Peers) != 0 {
 				return gointerfaces.ConvertH512ToBytes(sentPeers.Peers[0])
 			}
@@ -194,14 +200,15 @@ func (tp *P2PServer) SendTxsRequest(ctx context.Context, peerID string, hashes [
 			}
 
 			if sentPeers, err1 := tp.Sentries[i].SendMessageById(ctx, outreq66, &grpc.EmptyCallOption{}); err1 != nil {
-				lastErr = err1
+				if isPeerNotFoundErr(err1) {
+					continue
+				}
+				log.Error("[SendTxsRequest]", "err", err1)
+
 			} else if sentPeers != nil && len(sentPeers.Peers) != 0 {
 				return gointerfaces.ConvertH512ToBytes(sentPeers.Peers[0])
 			}
 		}
-	}
-	if lastErr != nil {
-		log.Error("Could not sent get pooled txs request to any sentry", "error", lastErr)
 	}
 	return nil
 }
@@ -258,8 +265,14 @@ func RecvTxMessageLoop(ctx context.Context,
 		default:
 		}
 
-		download.SentryHandshake(ctx, sentry, cs)
-		RecvTxMessage(ctx, sentry, handleInboundMessage, wg)
+		if err := download.SentryHandshake(ctx, sentry, cs); err != nil {
+			log.Error("[RecvTxMessage] sentry not ready yet", "err", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		if err := RecvTxMessage(ctx, sentry, handleInboundMessage, wg); err != nil {
+			log.Error("[RecvTxMessage]", "err", err)
+		}
 	}
 }
 
@@ -269,20 +282,8 @@ func RecvTxMessage(ctx context.Context,
 	sentry remote.SentryClient,
 	handleInboundMessage func(ctx context.Context, inreq *proto_sentry.InboundMessage, sentry remote.SentryClient) error,
 	wg *sync.WaitGroup,
-) {
-	// avoid crash because Erigon's core does many things
-	defer func() {
-		if r := recover(); r != nil { // just log is enough
-			panicReplacer := strings.NewReplacer("\n", " ", "\t", "", "\r", "")
-			stack := panicReplacer.Replace(string(debug.Stack()))
-			switch typed := r.(type) {
-			case error:
-				log.Error("[RecvTxMessage] fail", "err", fmt.Errorf("%w, trace: %s", typed, stack))
-			default:
-				log.Error("[RecvTxMessage] fail", "err", fmt.Errorf("%w, trace: %s", typed, stack))
-			}
-		}
-	}()
+) (err error) {
+	defer func() { err = debug.ReportPanicAndRecover() }() // avoid crash because Erigon's core does many things
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -309,11 +310,11 @@ func RecvTxMessage(ctx context.Context,
 		if errors.Is(err, io.EOF) {
 			return
 		}
-		log.Error("ReceiveTx messages failed", "error", err)
-		return
+		return err
 	}
 
-	for req, err := stream.Recv(); ; req, err = stream.Recv() {
+	var req *proto_sentry.InboundMessage
+	for req, err = stream.Recv(); ; req, err = stream.Recv() {
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -326,8 +327,7 @@ func RecvTxMessage(ctx context.Context,
 			if errors.Is(err, io.EOF) {
 				return
 			}
-			log.Error("[RecvTxMessage] Sentry disconnected", "error", err)
-			return
+			return err
 		}
 		if req == nil {
 			return
@@ -339,4 +339,88 @@ func RecvTxMessage(ctx context.Context,
 			wg.Done()
 		}
 	}
+}
+
+func RecvPeersLoop(ctx context.Context,
+	sentry remote.SentryClient,
+	cs *download.ControlServerImpl,
+	recentPeers *txpropagate.RecentlyConnectedPeers,
+	wg *sync.WaitGroup,
+) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		if err := download.SentryHandshake(ctx, sentry, cs); err != nil {
+			log.Error("[RecvPeers] sentry not ready yet", "err", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		if err := RecvPeers(ctx, sentry, recentPeers, wg); err != nil {
+			log.Error("[RecvPeers]", "err", err)
+		}
+	}
+}
+
+// RecvPeers
+// wg is used only in tests to avoid time.Sleep. For non-test code wg == nil
+func RecvPeers(ctx context.Context,
+	sentry remote.SentryClient,
+	recentPeers *txpropagate.RecentlyConnectedPeers,
+	wg *sync.WaitGroup,
+) (err error) {
+	defer func() { err = debug.ReportPanicAndRecover() }() // avoid crash because Erigon's core does many things
+	streamCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	stream, err := sentry.Peers(streamCtx, &proto_sentry.PeersRequest{})
+	if err != nil {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if s, ok := status.FromError(err); ok && s.Code() == codes.Canceled {
+			return
+		}
+		if errors.Is(err, io.EOF) {
+			return
+		}
+		return err
+	}
+
+	var req *proto_sentry.PeersReply
+	for req, err = stream.Recv(); ; req, err = stream.Recv() {
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if s, ok := status.FromError(err); ok && s.Code() == codes.Canceled {
+				return
+			}
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			return err
+		}
+		if req == nil {
+			return
+		}
+		switch req.Event {
+		case proto_sentry.PeersReply_Connect:
+			recentPeers.AddPeer(req.PeerId)
+		}
+		if wg != nil {
+			wg.Done()
+		}
+	}
+}
+
+func isPeerNotFoundErr(err error) bool {
+	return strings.Contains(err.Error(), "peer not found")
 }

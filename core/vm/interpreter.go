@@ -31,6 +31,7 @@ type Config struct {
 	Debug                   bool   // Enables debugging
 	Tracer                  Tracer // Opcode logger
 	NoRecursion             bool   // Disables call, callcode, delegate call and create
+	NoBaseFee               bool   // Forces the EIP-1559 baseFee to 0 (needed for 0 price calls)
 	EnablePreimageRecording bool   // Enables recording of SHA3/keccak preimages
 	SkipAnalysis            bool   // Whether we can skip jumpdest analysis based on the checked history
 	TraceJumpDest           bool   // Print transaction hashes where jumpdest analysis was useful
@@ -85,21 +86,21 @@ type EVMInterpreter struct {
 func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 	var jt *JumpTable
 	switch {
-	case evm.chainRules.IsLondon:
+	case evm.ChainRules.IsLondon:
 		jt = &londonInstructionSet
-	case evm.chainRules.IsBerlin:
+	case evm.ChainRules.IsBerlin:
 		jt = &berlinInstructionSet
-	case evm.chainRules.IsIstanbul:
+	case evm.ChainRules.IsIstanbul:
 		jt = &istanbulInstructionSet
-	case evm.chainRules.IsConstantinople:
+	case evm.ChainRules.IsConstantinople:
 		jt = &constantinopleInstructionSet
-	case evm.chainRules.IsByzantium:
+	case evm.ChainRules.IsByzantium:
 		jt = &byzantiumInstructionSet
-	case evm.chainRules.IsEIP158:
+	case evm.ChainRules.IsEIP158:
 		jt = &spuriousDragonInstructionSet
-	case evm.chainRules.IsEIP150:
+	case evm.ChainRules.IsEIP150:
 		jt = &tangerineWhistleInstructionSet
-	case evm.chainRules.IsHomestead:
+	case evm.ChainRules.IsHomestead:
 		jt = &homesteadInstructionSet
 	default:
 		jt = &frontierInstructionSet
@@ -217,7 +218,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			return nil, &ErrStackOverflow{stackLen: sLen, limit: operation.maxStack}
 		}
 		// If the operation is valid, enforce and write restrictions
-		if in.readOnly && in.evm.chainRules.IsByzantium {
+		if in.readOnly && in.evm.ChainRules.IsByzantium {
 			// If the interpreter is operating in readonly mode, make sure no
 			// state-modifying operation is performed. The 3rd stack item
 			// for a call operation is the value. Transferring value from one

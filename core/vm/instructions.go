@@ -277,7 +277,7 @@ func opSha3(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]by
 	}
 
 	evm := interpreter.evm
-	if evm.vmConfig.EnablePreimageRecording {
+	if evm.Config.EnablePreimageRecording {
 		evm.IntraBlockState.AddPreimage(interpreter.hasherBuf, data)
 	}
 
@@ -620,7 +620,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]
 		input  = callContext.memory.GetCopy(offset.Uint64(), size.Uint64())
 		gas    = callContext.contract.Gas
 	)
-	if interpreter.evm.chainRules.IsEIP150 {
+	if interpreter.evm.ChainRules.IsEIP150 {
 		gas -= gas / 64
 	}
 	// reuse size int for stackvalue
@@ -634,7 +634,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]
 	// homestead we must check for CodeStoreOutOfGasError (homestead only
 	// rule) and treat as an error, if the ruleset is frontier we must
 	// ignore this error and pretend the operation was successful.
-	if interpreter.evm.chainRules.IsHomestead && suberr == ErrCodeStoreOutOfGas {
+	if interpreter.evm.ChainRules.IsHomestead && suberr == ErrCodeStoreOutOfGas {
 		stackvalue.Clear()
 	} else if suberr != nil && suberr != ErrCodeStoreOutOfGas {
 		stackvalue.Clear()
@@ -841,8 +841,8 @@ func opSuicide(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([
 	beneficiaryAddr := common.Address(beneficiary.Bytes20())
 	balance := interpreter.evm.IntraBlockState.GetBalance(callerAddr)
 	interpreter.evm.IntraBlockState.AddBalance(beneficiaryAddr, balance)
-	if interpreter.evm.vmConfig.Debug {
-		interpreter.evm.vmConfig.Tracer.CaptureSelfDestruct(callerAddr, beneficiaryAddr, balance.ToBig())
+	if interpreter.evm.Config.Debug {
+		interpreter.evm.Config.Tracer.CaptureSelfDestruct(callerAddr, beneficiaryAddr, balance.ToBig())
 	}
 	interpreter.evm.IntraBlockState.Suicide(callerAddr)
 	return nil, nil

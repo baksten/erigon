@@ -81,9 +81,12 @@ var cmdSnapshotCheck = &cobra.Command{
 		tmpDb := kv2.NewMDBX().Path(path).MustOpen()
 		kv := kv2.NewSnapshotKV().
 			DB(tmpDb).
-			SnapshotDB([]string{dbutils.HeadersBucket, dbutils.HeaderCanonicalBucket, dbutils.HeaderTDBucket, dbutils.BlockBodyPrefix, dbutils.Senders, dbutils.HeadBlockKey, dbutils.HeaderNumberBucket}, mainDB.RwKV()).
-			SnapshotDB([]string{dbutils.PlainStateBucket, dbutils.CodeBucket, dbutils.PlainContractCodeBucket}, stateSnapshot).
+			//broken
+			//SnapshotDB([]string{dbutils.HeadersBucket, dbutils.HeaderCanonicalBucket, dbutils.HeaderTDBucket, dbutils.BlockBodyPrefix, dbutils.Senders, dbutils.HeadBlockKey, dbutils.HeaderNumberBucket}, mainDB.RwKV()).
+			//SnapshotDB([]string{dbutils.PlainStateBucket, dbutils.CodeBucket, dbutils.PlainContractCodeBucket}, stateSnapshot).
 			Open()
+		_ = mainDB
+		_ = stateSnapshot
 
 		if isNew {
 			if err := kv.Update(ctx, func(tx ethdb.RwTx) error {
@@ -101,7 +104,7 @@ var cmdSnapshotCheck = &cobra.Command{
 }
 
 func snapshotCheck(ctx context.Context, db ethdb.RwKV, isNew bool, tmpDir string) (err error) {
-	_, engine, chainConfig, vmConfig, _, sync, _, _, _ := newSync(ctx, db)
+	_, engine, chainConfig, vmConfig, _, sync, _, _ := newSync(ctx, db, nil)
 
 	var snapshotBlock uint64 = 11_000_000
 	var lastBlockHeaderNumber, blockNum uint64
@@ -244,8 +247,8 @@ func snapshotCheck(ctx context.Context, db ethdb.RwKV, isNew bool, tmpDir string
 		log.Info("Stage4", "progress", stage4.BlockNumber)
 
 		err = stagedsync.SpawnExecuteBlocksStage(stage4, sync, tx, blockNumber, ch,
-			stagedsync.StageExecuteBlocksCfg(db, false, false, false, 0, batchSize, nil, chainConfig, engine, vmConfig, tmpDir), nil,
-		)
+			stagedsync.StageExecuteBlocksCfg(db, false, false, false, 0, batchSize, nil, chainConfig, engine, vmConfig, nil, false, tmpDir),
+			false)
 		if err != nil {
 			return fmt.Errorf("execution err %w", err)
 		}
